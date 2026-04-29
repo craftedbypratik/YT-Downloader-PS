@@ -10,7 +10,7 @@ A cross-platform desktop GUI for downloading YouTube videos and playlists, power
 ## Features
 
 - Download single videos or full playlists
-- Quality selection: Best, 1080p, 1440p, 2160p, 720p, Audio Only
+- Quality selection: Best, 720p, 1080p, 1440p, 2160p (4K), 4320p (8K), Audio Only
 - Cookie support — load from a `.txt` file or extract live from Chrome, Brave, Firefox, or Edge
 - Playlist range filter (e.g. `1-50`)
 - Real-time progress bar and streaming log output
@@ -25,6 +25,7 @@ A cross-platform desktop GUI for downloading YouTube videos and playlists, power
 
 - Python 3.8 or newer
 - `tkinter` (bundled with most Python installers; on Linux: `sudo apt install python3-tk`)
+- **Node.js v20+** — required to solve YouTube's signature/n-challenge (install from [nodejs.org](https://nodejs.org) or via your package manager). The [`yt-dlp-ejs`](https://github.com/yt-dlp/yt-dlp-ejs) solver script is installed automatically via pip.
 
 ---
 
@@ -104,7 +105,7 @@ yt-downloader/
 
 **Everything is automatic — no binaries are committed to this repository:**
 
-- **Script mode** — first launch installs `yt-dlp` and `imageio-ffmpeg` via pip (one-time only).
+- **Script mode** — first launch installs `yt-dlp`, `imageio-ffmpeg`, and `yt-dlp-ejs` via pip (one-time only).
 - **Frozen app** — first launch downloads the latest `yt-dlp` binary from GitHub releases and caches it in `~/.yt-downloader/bin/`; ffmpeg is already inside the packaged app via `imageio-ffmpeg`.
 - **Check for Updates** button — re-runs the above in a background dialog at any time.
 
