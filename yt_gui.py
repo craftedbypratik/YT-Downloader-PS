@@ -365,7 +365,7 @@ class YTDownloaderApp:
             self._add_ctx_menu(w)
 
         # Footer
-        ttk.Label(r, text="Created by Pratik © 2025",
+        ttk.Label(r, text="Created by Pratik © 2026",
                   font=("Segoe UI", 11, "italic"),
                   foreground="#888").grid(row=1, column=0, sticky="sew", pady=(0, 8))
 
