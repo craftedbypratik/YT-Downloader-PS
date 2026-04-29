@@ -15,7 +15,7 @@ A cross-platform desktop GUI for downloading YouTube videos and playlists, power
 - Playlist range filter (e.g. `1-50`)
 - Real-time progress bar and streaming log output
 - Stop button to cancel in-progress downloads
-- **Automatic first-run setup** — installs `yt-dlp` and `ffmpeg` via pip on first launch (one-time only)
+- **Automatic first-run setup** — installs `yt-dlp`, `ffmpeg`, and `yt-dlp-ejs` via pip on first launch when running from source (one-time only); the standalone app has everything bundled
 - **Check for Updates** button — upgrades `yt-dlp` and `ffmpeg` to the latest versions at any time
 - Works as a plain Python script **or** as a standalone PyInstaller-packaged `.app` / `.exe`
 
@@ -47,7 +47,7 @@ pip install -r requirements.txt
 python3 yt_gui.py
 ```
 
-On the **very first launch** (when dependencies are not yet installed), a setup dialog will appear and install everything automatically. This only happens once.
+On the **very first launch** when running from source (dependencies not yet installed), a setup dialog will appear and install everything automatically. This only happens once. When running the standalone `.app` / `.exe`, all dependencies are already bundled — no setup step needed.
 
 > **Tip:** You can also run `python3 install_requirements.py` to install everything from the command line before the first GUI launch.
 
@@ -100,13 +100,13 @@ yt-downloader/
 
 | Scenario | yt-dlp resolution | ffmpeg resolution |
 |----------|-------------------|-------------------|
-| Script (`python yt_gui.py`) | `~/.yt-downloader/bin/` → system `PATH` → `python -m yt_dlp` | `imageio-ffmpeg` pip binary → system `PATH` |
-| Frozen app (PyInstaller) | downloaded from GitHub at first launch → `~/.yt-downloader/bin/` | `imageio-ffmpeg` binary bundled by PyInstaller at build time |
+| Script (`python yt_gui.py`) | system `PATH` → `python -m yt_dlp` (pip-installed) | `imageio-ffmpeg` pip binary → system `PATH` |
+| Frozen app (PyInstaller) | bundled inside the app via self-invocation proxy (`__ytdlp__`) | `imageio-ffmpeg` binary bundled by PyInstaller at build time |
 
 **Everything is automatic — no binaries are committed to this repository:**
 
 - **Script mode** — first launch installs `yt-dlp`, `imageio-ffmpeg`, and `yt-dlp-ejs` via pip (one-time only).
-- **Frozen app** — first launch downloads the latest `yt-dlp` binary from GitHub releases and caches it in `~/.yt-downloader/bin/`; ffmpeg is already inside the packaged app via `imageio-ffmpeg`.
+- **Frozen app** — `yt-dlp`, `yt-dlp-ejs`, and `ffmpeg` are all bundled inside the packaged app; no internet access or setup required on first launch.
 - **Check for Updates** button — re-runs the above in a background dialog at any time.
 
 ---
