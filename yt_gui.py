@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 import subprocess
 import threading
+import queue
 import os
 import sys
 import platform
@@ -118,7 +119,7 @@ def install_or_update_deps(log_cb=None):
 
     Frozen app  → download yt-dlp binary to APP_BIN_DIR;
                   ffmpeg is already bundled (imageio_ffmpeg collected by PyInstaller).
-    Script mode → pip install / upgrade yt-dlp + imageio-ffmpeg.
+    Script mode → pip install / upgrade yt-dlp + imageio-ffmpeg + yt-dlp-ejs.
 
     Streams progress lines to log_cb(str).
     Returns a (possibly empty) list of error strings.
@@ -137,7 +138,7 @@ def install_or_update_deps(log_cb=None):
             errors.append("yt-dlp binary download failed")
     else:
         # ── Script mode ────────────────────────────────────────────────────
-        for pkg in ("yt-dlp", "imageio-ffmpeg"):
+        for pkg in ("yt-dlp", "imageio-ffmpeg", "yt-dlp-ejs"):
             log(f"→ {pkg}: installing / updating …")
             try:
                 proc = subprocess.Popen(
@@ -167,9 +168,9 @@ def install_or_update_deps(log_cb=None):
 
 def show_setup_dialog(parent, on_complete):
     """
-    Modal setup window.  Installs deps in a daemon thread, then fires
+    Modal setup window. Installs deps in a daemon thread, then fires
     on_complete() on the main thread once finished.
-    All UI updates from the background thread are marshalled via win.after().
+    Uses queue.Queue + polling so the background thread never touches tkinter.
     """
     W, H = 540, 410
     win = tk.Toplevel(parent)
@@ -198,26 +199,46 @@ def show_setup_dialog(parent, on_complete):
     status_var = tk.StringVar(value="Starting…")
     ttk.Label(win, textvariable=status_var, font=("Segoe UI", 11)).pack(pady=(0, 12))
 
-    def _append_direct(msg):
-        """Must only be called on the main thread."""
+    log_q    = queue.Queue()   # background thread puts str messages here
+    done_q   = queue.Queue()   # background thread puts result dict here
+
+    def _append(msg):
         log_box.config(state="normal")
         log_box.insert(tk.END, msg + "\n")
         log_box.see(tk.END)
         log_box.config(state="disabled")
 
-    def append(msg):
-        """Thread-safe: schedules the UI update on the main thread."""
-        win.after(0, lambda m=msg: _append_direct(m))
+    def _poll():
+        # Drain all pending log messages
+        try:
+            while True:
+                msg = log_q.get_nowait()
+                _append(msg)
+        except queue.Empty:
+            pass
+        # Check if background work finished
+        try:
+            result = done_q.get_nowait()
+            progress.stop()
+            status_var.set(
+                "Setup finished with warnings — see log above."
+                if result["errors"] else "All done!  Launching the app…"
+            )
+            _append("\nOpening application…")
+            win.after(1500, lambda: (win.destroy(), on_complete()))
+            return   # stop polling
+        except queue.Empty:
+            pass
+        win.after(50, _poll)   # keep polling every 50 ms
 
     def do_setup():
-        errors = install_or_update_deps(append)
+        errors = install_or_update_deps(log_q.put)
         mark_setup_done()
-        if errors:
-            win.after(0, lambda: status_var.set("Setup finished with warnings — see log above."))
-        else:
-            win.after(0, lambda: status_var.set("All done!  Launching the app…"))
-        win.after(0, lambda: _append_direct("\nOpening application…"))
-        win.after(0, progress.stop)
+        done_q.put({"errors": errors})
+
+    win.after(50, _poll)
+    threading.Thread(target=do_setup, daemon=True).start()
+    win.grab_set()
 
 
 # ─── Main Application ─────────────────────────────────────────────────────────
@@ -470,6 +491,11 @@ class YTDownloaderApp:
         cmd = ytdlp + ["-o", tmpl, "--no-overwrites",
                       "--ffmpeg-location", ffmpeg]
 
+        # Enable Node.js JS runtime if available (required by yt-dlp to solve
+        # YouTube's signature/n-challenge; yt-dlp-ejs provides the solver scripts)
+        if shutil.which("node"):
+            cmd += ["--js-runtimes", "node"]
+
         quality_flags = {
             "Best":       ["-f", "bestvideo+bestaudio/best"],
             "Audio Only": ["-f", "bestaudio"],
@@ -558,30 +584,44 @@ class YTDownloaderApp:
         close_btn = ttk.Button(win, text="Close", command=win.destroy, state="disabled")
         close_btn.pack(pady=(0, 12))
 
-        def _append_direct(msg):
+        log_q  = queue.Queue()
+        done_q = queue.Queue()
+
+        def _append(msg):
             log_box.config(state="normal")
             log_box.insert(tk.END, msg + "\n")
             log_box.see(tk.END)
             log_box.config(state="disabled")
 
-        def append(msg):
-            win.after(0, lambda m=msg: _append_direct(m))
+        def _poll():
+            try:
+                while True:
+                    _append(log_q.get_nowait())
+            except queue.Empty:
+                pass
+            try:
+                result = done_q.get_nowait()
+                progress.stop()
+                status_var.set(
+                    "Updated with warnings — see log." if result["errors"]
+                    else "All dependencies are up to date!")
+                close_btn.config(state="normal")
+                return
+            except queue.Empty:
+                pass
+            win.after(50, _poll)
 
         def do_update():
-            errors = install_or_update_deps(append)
-            win.after(0, progress.stop)
-            win.after(0, lambda: status_var.set(
-                "Updated with warnings — see log." if errors
-                else "All dependencies are up to date!"))
-            win.after(0, lambda: close_btn.config(state="normal"))
+            errors = install_or_update_deps(log_q.put)
+            done_q.put({"errors": errors})
 
+        win.after(50, _poll)
         threading.Thread(target=do_update, daemon=True).start()
 
     def _frozen_update(self):
         """
         For PyInstaller builds: re-download the latest yt-dlp binary from
-        GitHub releases into APP_BIN_DIR.  ffmpeg is bundled in the app and
-        updates only when the user installs a newer build of the app.
+        GitHub releases into APP_BIN_DIR.
         """
         W, H = 540, 320
         win = tk.Toplevel(self.root)
@@ -614,23 +654,38 @@ class YTDownloaderApp:
                                state="disabled")
         close_btn.pack(pady=(0, 12))
 
-        def _append_direct(msg):
+        log_q  = queue.Queue()
+        done_q = queue.Queue()
+
+        def _append(msg):
             log_box.config(state="normal")
             log_box.insert(tk.END, msg + "\n")
             log_box.see(tk.END)
             log_box.config(state="disabled")
 
-        def append(msg):
-            win.after(0, lambda m=msg: _append_direct(m))
+        def _poll():
+            try:
+                while True:
+                    _append(log_q.get_nowait())
+            except queue.Empty:
+                pass
+            try:
+                result = done_q.get_nowait()
+                progress.stop()
+                status_var.set(
+                    "yt-dlp updated to the latest version!" if result["ok"]
+                    else "Update failed — check log above.")
+                close_btn.config(state="normal")
+                return
+            except queue.Empty:
+                pass
+            win.after(50, _poll)
 
         def do():
-            ok = download_ytdlp_binary(append)
-            win.after(0, progress.stop)
-            win.after(0, lambda: status_var.set(
-                "yt-dlp updated to the latest version!" if ok
-                else "Update failed — check log above."))
-            win.after(0, lambda: close_btn.config(state="normal"))
+            ok = download_ytdlp_binary(log_q.put)
+            done_q.put({"ok": ok})
 
+        win.after(50, _poll)
         threading.Thread(target=do, daemon=True).start()
 
 
