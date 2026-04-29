@@ -499,11 +499,11 @@ class YTDownloaderApp:
         quality_flags = {
             "Best":       ["-f", "bestvideo+bestaudio/best"],
             "Audio Only": ["-f", "bestaudio"],
-            "720p":       ["-f", "best[height<=720]"],
-            "1080p":      ["-f", "best[height<=1080]"],
-            "1440p":      ["-f", "best[height<=1440]"],
-            "2160p":      ["-f", "best[height<=2160]"],
-            "4320p (8K)": ["-f", "best[height<=4320]"],
+            "720p":       ["-f", "bestvideo[height<=720]+bestaudio/best[height<=720]"],
+            "1080p":      ["-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]"],
+            "1440p":      ["-f", "bestvideo[height<=1440]+bestaudio/best[height<=1440]"],
+            "2160p":      ["-f", "bestvideo[height<=2160]+bestaudio/best[height<=2160]"],
+            "4320p (8K)": ["-f", "bestvideo[height<=4320]+bestaudio/best[height<=4320]"],
         }
         cmd += quality_flags.get(quality, [])
 
