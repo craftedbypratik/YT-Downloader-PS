@@ -1,35 +1,45 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Cross-platform PyInstaller spec for YTDownloader.
 #
-# NO manual binaries are required.
+# All dependencies are bundled automatically:
+#   ffmpeg    → imageio-ffmpeg pip package (pre-built binary per platform)
+#   yt-dlp    → bundled as a Python module; frozen app re-invokes itself with
+#               the '__ytdlp__' sentinel to run yt-dlp in-process, giving
+#               access to yt-dlp-ejs for YouTube JS-challenge solving.
+#   yt-dlp-ejs → bundled Python package + JS solver scripts
 #
-# ffmpeg  → bundled automatically from the imageio-ffmpeg pip package.
-#           Ensure imageio-ffmpeg is installed in your build environment:
-#               pip install imageio-ffmpeg
-#           PyInstaller will collect its pre-built ffmpeg binary via
-#           collect_data_files('imageio_ffmpeg').
-#
-# yt-dlp  → downloaded from GitHub releases on first app launch and cached
-#           in ~/.yt-downloader/bin/.  Nothing to do at build time.
+# Prerequisites (run once before building):
+#   pip install pyinstaller imageio-ffmpeg yt-dlp yt-dlp-ejs
 
+import os as _os
 import platform as _platform
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 _system = _platform.system()
 _icon   = {"Darwin": "icon.icns", "Windows": "icon.ico"}.get(_system)
 
-# Collect imageio_ffmpeg's pre-built ffmpeg binary + package data
+# Collect data files from bundled packages
 _imageio_datas = collect_data_files("imageio_ffmpeg", include_py_files=False)
+_ejs_datas     = collect_data_files("yt_dlp_ejs",    include_py_files=False)
+_ytdlp_datas   = collect_data_files("yt_dlp",        include_py_files=False)
+
+# Icon datas — only include those that exist
+_icon_datas = []
+for _ico in ("icon.icns", "icon.ico"):
+    if _os.path.isfile(_ico):
+        _icon_datas.append((_ico, "."))
 
 a = Analysis(
     ["yt_gui.py"],
     pathex=[],
-    binaries=[],                          # no manual binaries needed
-    datas=_imageio_datas + [
-        ("icon.icns", "."),
-        ("icon.ico",  "."),
-    ],
-    hiddenimports=["imageio_ffmpeg"],
+    binaries=[],
+    datas=_imageio_datas + _ejs_datas + _ytdlp_datas + _icon_datas,
+    hiddenimports=[
+        "imageio_ffmpeg",
+        "yt_dlp",
+        "yt_dlp_ejs",
+        "yt_dlp_ejs.yt.solver",
+    ] + collect_submodules("yt_dlp"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -42,9 +52,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
-    [],
+    [],                       # binaries excluded here for onedir mode
+    exclude_binaries=True,
     name="YTDownloader",
     debug=False,
     bootloader_ignore_signals=False,
@@ -61,9 +70,19 @@ exe = EXE(
     icon=_icon,
 )
 
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="YTDownloader",
+)
+
 if _system == "Darwin":
     app = BUNDLE(
-        exe,
+        coll,
         name="YTDownloader.app",
         icon=_icon,
         bundle_identifier="com.pratik.ytdownloader",

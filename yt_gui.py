@@ -1,10 +1,23 @@
+import sys
+import os
+
+# ─── PyInstaller frozen-mode yt-dlp proxy ────────────────────────────────────
+# When the frozen app is invoked with '__ytdlp__' as the first argument it
+# delegates entirely to yt-dlp's main(), using the bundled Python environment
+# (which includes yt-dlp-ejs).  This is how the GUI subprocess-calls yt-dlp
+# in frozen mode so all optional libraries are available.
+if getattr(sys, "frozen", False) and len(sys.argv) > 1 and sys.argv[1] == "__ytdlp__":
+    del sys.argv[1]          # remove the sentinel; rest of argv goes to yt-dlp
+    from yt_dlp import main as _ytdlp_main
+    _ytdlp_main()
+    sys.exit(0)
+# ─────────────────────────────────────────────────────────────────────────────
+
 import tkinter as tk
 from tkinter import ttk, filedialog
 import subprocess
 import threading
 import queue
-import os
-import sys
 import platform
 import shutil
 
@@ -31,29 +44,27 @@ _YTDLP_BIN = {
 def get_ytdlp_cmd():
     """
     Return yt-dlp invocation as a list.
-    Resolution order:
-      1. ~/.yt-downloader/bin/  — binary downloaded at first-run (frozen app)
-      2. system PATH            — yt-dlp installed globally or in active venv
-      3. python -m yt_dlp       — pip-installed module (script mode fallback)
-    Returns [] if nothing is found (triggers a setup reminder in the UI).
+
+    Frozen app  → re-invoke self with '__ytdlp__' sentinel so the bundled
+                  Python (with yt-dlp-ejs) handles the download.
+    Script mode → system PATH → python -m yt_dlp fallback.
+    Returns [] if nothing is found.
     """
-    system   = platform.system()
-    bin_name = _YTDLP_BIN.get(system, "yt-dlp")
-    cached   = os.path.join(APP_BIN_DIR, bin_name)
-    if os.path.isfile(cached) and os.access(cached, os.X_OK):
-        return [cached]
+    if getattr(sys, "frozen", False):
+        # Use the frozen app's own bundled Python + yt-dlp + yt-dlp-ejs
+        return [sys.executable, "__ytdlp__"]
+
+    # Script mode
     p = shutil.which("yt-dlp")
     if p:
         return [p]
-    if not getattr(sys, "frozen", False):
-        # Script mode: try running as an installed module
-        try:
-            subprocess.run(
-                [sys.executable, "-m", "yt_dlp", "--version"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            return [sys.executable, "-m", "yt_dlp"]
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "yt_dlp", "--version"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        return [sys.executable, "-m", "yt_dlp"]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
     return []
 
 
@@ -117,8 +128,9 @@ def install_or_update_deps(log_cb=None):
     """
     Provision all runtime dependencies.
 
-    Frozen app  → download yt-dlp binary to APP_BIN_DIR;
-                  ffmpeg is already bundled (imageio_ffmpeg collected by PyInstaller).
+    Frozen app  → yt-dlp and yt-dlp-ejs are bundled inside the app;
+                  ffmpeg is bundled via imageio-ffmpeg (PyInstaller).
+                  Nothing needs to be downloaded on first run.
     Script mode → pip install / upgrade yt-dlp + imageio-ffmpeg + yt-dlp-ejs.
 
     Streams progress lines to log_cb(str).
@@ -132,10 +144,10 @@ def install_or_update_deps(log_cb=None):
 
     if getattr(sys, "frozen", False):
         # ── Frozen app ─────────────────────────────────────────────────────
-        log("→ ffmpeg: bundled inside the application via imageio-ffmpeg  ✓\n")
-        ok = download_ytdlp_binary(log_cb)
-        if not ok:
-            errors.append("yt-dlp binary download failed")
+        log("→ yt-dlp:        bundled inside the application  ✓\n")
+        log("→ yt-dlp-ejs:    bundled inside the application  ✓\n")
+        log("→ ffmpeg:        bundled inside the application via imageio-ffmpeg  ✓\n")
+        log("\nAll dependencies are ready.\n")
     else:
         # ── Script mode ────────────────────────────────────────────────────
         for pkg in ("yt-dlp", "imageio-ffmpeg", "yt-dlp-ejs"):
@@ -621,73 +633,19 @@ class YTDownloaderApp:
 
     def _frozen_update(self):
         """
-        For PyInstaller builds: re-download the latest yt-dlp binary from
-        GitHub releases into APP_BIN_DIR.
+        For PyInstaller builds: yt-dlp and yt-dlp-ejs are bundled inside the
+        app, so there is nothing to update at runtime.  Inform the user to
+        download the latest release of YTDownloader for dependency updates.
         """
-        W, H = 540, 320
-        win = tk.Toplevel(self.root)
-        win.title("Check for Updates")
-        win.resizable(False, False)
-        win.grab_set()
-        win.update_idletasks()
-        win.geometry(
-            f"{W}x{H}+{(win.winfo_screenwidth()  - W) // 2}"
-            f"+{(win.winfo_screenheight() - H) // 2}"
+        import tkinter.messagebox as mb
+        mb.showinfo(
+            "Check for Updates",
+            "yt-dlp and all dependencies are bundled inside this application.\n\n"
+            "To get the latest versions, please download the newest release of "
+            "YTDownloader from GitHub:\n\n"
+            "https://github.com/craftedbypratik/YT-Downloader-PS/releases",
+            parent=self.root,
         )
-
-        ttk.Label(win, text="Updating yt-dlp",
-                  font=("Segoe UI", 16, "bold"),
-                  foreground="#1976D2").pack(pady=(20, 5))
-
-        progress = ttk.Progressbar(win, mode="indeterminate", length=490)
-        progress.pack(padx=20, pady=8)
-        progress.start(12)
-
-        log_box = tk.Text(win, height=6, font=("Consolas", 10),
-                          state="disabled", bg="#f5f5f5", relief="flat", bd=1)
-        log_box.pack(padx=20, pady=8, fill="both", expand=True)
-
-        status_var = tk.StringVar(value="Downloading…")
-        ttk.Label(win, textvariable=status_var,
-                  font=("Segoe UI", 11)).pack(pady=(0, 4))
-
-        close_btn = ttk.Button(win, text="Close", command=win.destroy,
-                               state="disabled")
-        close_btn.pack(pady=(0, 12))
-
-        log_q  = queue.Queue()
-        done_q = queue.Queue()
-
-        def _append(msg):
-            log_box.config(state="normal")
-            log_box.insert(tk.END, msg + "\n")
-            log_box.see(tk.END)
-            log_box.config(state="disabled")
-
-        def _poll():
-            try:
-                while True:
-                    _append(log_q.get_nowait())
-            except queue.Empty:
-                pass
-            try:
-                result = done_q.get_nowait()
-                progress.stop()
-                status_var.set(
-                    "yt-dlp updated to the latest version!" if result["ok"]
-                    else "Update failed — check log above.")
-                close_btn.config(state="normal")
-                return
-            except queue.Empty:
-                pass
-            win.after(50, _poll)
-
-        def do():
-            ok = download_ytdlp_binary(log_q.put)
-            done_q.put({"ok": ok})
-
-        win.after(50, _poll)
-        threading.Thread(target=do, daemon=True).start()
 
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────
