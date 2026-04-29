@@ -504,9 +504,27 @@ class YTDownloaderApp:
                       "--ffmpeg-location", ffmpeg]
 
         # Enable Node.js JS runtime if available (required by yt-dlp to solve
-        # YouTube's signature/n-challenge; yt-dlp-ejs provides the solver scripts)
-        if shutil.which("node"):
-            cmd += ["--js-runtimes", "node"]
+        # YouTube's signature/n-challenge; yt-dlp-ejs provides the solver scripts).
+        # Search common install paths in addition to PATH for frozen apps,
+        # which may have a restricted PATH that doesn't include the Node.js dir.
+        _node_candidates = [
+            # macOS — Homebrew
+            "/opt/homebrew/bin/node",       # Apple Silicon
+            "/usr/local/bin/node",          # Intel / nvm
+            "/usr/bin/node",                # system
+            # Windows
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Program Files (x86)\nodejs\node.exe",
+            # Linux
+            "/usr/local/bin/node",
+            "/usr/bin/nodejs",
+        ]
+        _node_path = shutil.which("node") or next(
+            (p for p in _node_candidates if os.path.isfile(p) and os.access(p, os.X_OK)),
+            None
+        )
+        if _node_path:
+            cmd += ["--js-runtimes", f"node:{_node_path}"]
 
         quality_flags = {
             "Best":       ["-f", "bestvideo+bestaudio/best"],
