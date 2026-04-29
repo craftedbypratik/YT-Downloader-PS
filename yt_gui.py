@@ -331,7 +331,7 @@ class YTDownloaderApp:
             row=5, column=0, sticky="e", pady=5)
         self.quality_list = ttk.Combobox(
             mf,
-            values=["Best", "Audio Only", "720p", "1080p", "1440p", "2160p"],
+            values=["Best", "Audio Only", "720p", "1080p", "1440p", "2160p", "4320p (8K)"],
             state="readonly", width=15)
         self.quality_list.current(0)
         self.quality_list.grid(row=5, column=1, sticky="w", pady=5)
@@ -503,6 +503,7 @@ class YTDownloaderApp:
             "1080p":      ["-f", "best[height<=1080]"],
             "1440p":      ["-f", "best[height<=1440]"],
             "2160p":      ["-f", "best[height<=2160]"],
+            "4320p (8K)": ["-f", "best[height<=4320]"],
         }
         cmd += quality_flags.get(quality, [])
 
