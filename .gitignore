@@ -1,0 +1,50 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+eggs/
+.eggs/
+*.whl
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ── PyInstaller build artifacts ───────────────────────────────────────────────
+build/
+dist/
+
+# ── Runtime app-data (generated on the user's machine, never committed) ───────
+# ~/.yt-downloader/ lives outside the repo; this entry covers any accidental
+# local copies of the first-run flag or downloaded binaries.
+.setup_done
+
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Icon\r
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# ── Windows metadata ──────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Linux ─────────────────────────────────────────────────────────────────────
+*~
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
