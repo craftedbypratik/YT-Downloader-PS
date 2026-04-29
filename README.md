@@ -32,8 +32,8 @@ A cross-platform desktop GUI for downloading YouTube videos and playlists, power
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-username/yt-downloader.git
-cd yt-downloader
+git clone https://github.com/craftedbypratik/YT-Downloader-PS.git
+cd YT-Downloader-PS
 
 # 2. (Optional) create a virtual environment
 python3 -m venv .venv && source .venv/bin/activate   # macOS / Linux
