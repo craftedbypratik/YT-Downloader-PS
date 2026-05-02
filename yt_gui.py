@@ -348,24 +348,31 @@ class YTDownloaderApp:
         self.quality_list.current(0)
         self.quality_list.grid(row=5, column=1, sticky="w", pady=5)
 
+        # ── Concurrent fragments ──────────────────────────────────────────────
+        ttk.Label(mf, text="Connections (fragments):").grid(
+            row=6, column=0, sticky="e", pady=5)
+        self.conns_var = tk.IntVar(value=4)
+        ttk.Spinbox(mf, from_=1, to=16, textvariable=self.conns_var,
+                    width=5, state="readonly").grid(row=6, column=1, sticky="w", pady=5)
+
         # ── Playlist range ────────────────────────────────────────────────────
         ttk.Label(mf, text="Playlist Range (optional, e.g. 1-50):").grid(
-            row=6, column=0, sticky="e", pady=5)
+            row=7, column=0, sticky="e", pady=5)
         self.playlist_range_entry = ttk.Entry(mf, width=20)
-        self.playlist_range_entry.grid(row=6, column=1, sticky="w", pady=5)
+        self.playlist_range_entry.grid(row=7, column=1, sticky="w", pady=5)
 
         # ── Output directory ──────────────────────────────────────────────────
         ttk.Label(mf, text="Download Folder:").grid(
-            row=7, column=0, sticky="e", pady=5)
+            row=8, column=0, sticky="e", pady=5)
         self.output_dir_var = tk.StringVar()
         self.output_dir_entry = ttk.Entry(mf, textvariable=self.output_dir_var, width=45)
-        self.output_dir_entry.grid(row=7, column=1, sticky="ew", pady=5)
+        self.output_dir_entry.grid(row=8, column=1, sticky="ew", pady=5)
         ttk.Button(mf, text="Browse",
-                   command=self.browse_folder).grid(row=7, column=2, sticky="w", padx=5)
+                   command=self.browse_folder).grid(row=8, column=2, sticky="w", padx=5)
 
         # ── Action buttons ────────────────────────────────────────────────────
         bf = ttk.Frame(mf)
-        bf.grid(row=8, column=0, columnspan=3, pady=15)
+        bf.grid(row=9, column=0, columnspan=3, pady=15)
         ttk.Button(bf, text="Download",
                    command=self.start_download).pack(side="left", padx=10)
         ttk.Button(bf, text="Stop",
@@ -376,20 +383,20 @@ class YTDownloaderApp:
         # ── Progress bar ──────────────────────────────────────────────────────
         self.progress_bar = ttk.Progressbar(
             mf, orient="horizontal", length=400, mode="determinate")
-        self.progress_bar.grid(row=9, column=0, columnspan=3, sticky="ew", pady=10)
+        self.progress_bar.grid(row=10, column=0, columnspan=3, sticky="ew", pady=10)
 
         # ── Status label ──────────────────────────────────────────────────────
         self.status_label = ttk.Label(mf, text="", foreground="#388E3C",
                                       font=("Segoe UI", 15))
-        self.status_label.grid(row=10, column=0, columnspan=3, sticky="w", pady=5)
+        self.status_label.grid(row=11, column=0, columnspan=3, sticky="w", pady=5)
 
         # ── Log area ──────────────────────────────────────────────────────────
         ttk.Label(mf, text="Logs",
                   font=("Segoe UI", 14, "bold")).grid(
-            row=11, column=0, columnspan=3, sticky="w", pady=(10, 0))
+            row=12, column=0, columnspan=3, sticky="w", pady=(10, 0))
         self.output_text = tk.Text(mf, height=12, width=80, font=("Consolas", 13))
-        self.output_text.grid(row=12, column=0, columnspan=3, sticky="nsew", pady=10)
-        mf.grid_rowconfigure(12, weight=1)
+        self.output_text.grid(row=13, column=0, columnspan=3, sticky="nsew", pady=10)
+        mf.grid_rowconfigure(13, weight=1)
 
         # Context menus on all text inputs
         for w in (self.url_entry, self.cookies_entry,
@@ -453,6 +460,7 @@ class YTDownloaderApp:
             out_dir  = self.output_dir_var.get().strip(),
             quality  = self.quality_list.get(),
             pl_range = self.playlist_range_entry.get().strip(),
+            conns    = self.conns_var.get(),
         )
         threading.Thread(target=self._download, args=(params,), daemon=True).start()
 
@@ -471,6 +479,7 @@ class YTDownloaderApp:
         out_dir  = params["out_dir"]
         quality  = params["quality"]
         pl_range = params["pl_range"]
+        conns    = params["conns"]
 
         if not url:
             self._ui(lambda: self.status_label.config(text="URL is required!"))
@@ -536,6 +545,8 @@ class YTDownloaderApp:
             "4320p (8K)": ["-f", "bestvideo[height<=4320]+bestaudio/best[height<=4320]"],
         }
         cmd += quality_flags.get(quality, [])
+
+        cmd += ["--concurrent-fragments", str(conns)]
 
         if pl_range:
             cmd += ["--playlist-items", pl_range]
