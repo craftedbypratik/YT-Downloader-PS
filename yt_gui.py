@@ -20,6 +20,7 @@ import threading
 import queue
 import platform
 import shutil
+import signal
 
 # ─── App Data Directory ───────────────────────────────────────────────────────
 APP_DATA_DIR   = os.path.join(os.path.expanduser("~"), ".yt-downloader")
@@ -259,6 +260,7 @@ class YTDownloaderApp:
     def __init__(self, root):
         self.root             = root
         self.download_process = None
+        self._paused          = False
         self._build_ui()
 
     # ── UI Construction ───────────────────────────────────────────────────────
@@ -349,11 +351,15 @@ class YTDownloaderApp:
         self.quality_list.grid(row=5, column=1, sticky="w", pady=5)
 
         # ── Concurrent fragments ──────────────────────────────────────────────
-        ttk.Label(mf, text="Connections (fragments):").grid(
+        ttk.Label(mf, text="Concurrent Fragments:").grid(
             row=6, column=0, sticky="e", pady=5)
+        self.conns_enabled = tk.BooleanVar(value=False)
         self.conns_var = tk.IntVar(value=4)
-        ttk.Spinbox(mf, from_=1, to=16, textvariable=self.conns_var,
-                    width=5, state="readonly").grid(row=6, column=1, sticky="w", pady=5)
+        ttk.Checkbutton(mf, text="Enable", variable=self.conns_enabled,
+                        command=self._on_conns_toggle).grid(row=6, column=1, sticky="w", pady=5)
+        self._conns_spinbox = ttk.Spinbox(mf, from_=2, to=16, textvariable=self.conns_var,
+                    width=5, state="disabled")
+        self._conns_spinbox.grid(row=6, column=1, sticky="w", pady=5, padx=70)
 
         # ── Playlist range ────────────────────────────────────────────────────
         ttk.Label(mf, text="Playlist Range (optional, e.g. 1-50):").grid(
@@ -375,6 +381,9 @@ class YTDownloaderApp:
         bf.grid(row=9, column=0, columnspan=3, pady=15)
         ttk.Button(bf, text="Download",
                    command=self.start_download).pack(side="left", padx=10)
+        self._pause_btn_text = tk.StringVar(value="Pause")
+        ttk.Button(bf, textvariable=self._pause_btn_text,
+                   command=self.pause_resume_download).pack(side="left", padx=10)
         ttk.Button(bf, text="Stop",
                    command=self.stop_download).pack(side="left", padx=10)
         ttk.Button(bf, text="Check for Updates",
@@ -383,20 +392,36 @@ class YTDownloaderApp:
         # ── Progress bar ──────────────────────────────────────────────────────
         self.progress_bar = ttk.Progressbar(
             mf, orient="horizontal", length=400, mode="determinate")
-        self.progress_bar.grid(row=10, column=0, columnspan=3, sticky="ew", pady=10)
+        self.progress_bar.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(10, 2))
 
-        # ── Status label ──────────────────────────────────────────────────────
+        # ── Status & speed row ────────────────────────────────────────────────
         self.status_label = ttk.Label(mf, text="", foreground="#388E3C",
                                       font=("Segoe UI", 15))
-        self.status_label.grid(row=11, column=0, columnspan=3, sticky="w", pady=5)
+        self.status_label.grid(row=11, column=0, columnspan=2, sticky="w", pady=5)
+        self.speed_label = ttk.Label(mf, text="", foreground="#1976D2",
+                                     font=("Segoe UI", 13))
+        self.speed_label.grid(row=11, column=2, sticky="e", pady=5)
+
+        # ── Playlist progress (hidden until a playlist is detected) ───────────
+        self._pl_bar_frame = ttk.Frame(mf)
+        self._pl_bar_frame.grid(row=12, column=0, columnspan=3, sticky="ew")
+        self._pl_bar_frame.grid_remove()
+        ttk.Label(self._pl_bar_frame, text="Playlist:",
+                  font=("Segoe UI", 13)).pack(side="left", padx=(0, 8))
+        self._pl_progress_label = ttk.Label(self._pl_bar_frame, text="",
+                                             font=("Segoe UI", 13))
+        self._pl_progress_label.pack(side="left", padx=(0, 8))
+        self.pl_progress_bar = ttk.Progressbar(
+            self._pl_bar_frame, orient="horizontal", mode="determinate", length=300)
+        self.pl_progress_bar.pack(side="left", fill="x", expand=True, pady=6)
 
         # ── Log area ──────────────────────────────────────────────────────────
         ttk.Label(mf, text="Logs",
                   font=("Segoe UI", 14, "bold")).grid(
-            row=12, column=0, columnspan=3, sticky="w", pady=(10, 0))
+            row=13, column=0, columnspan=3, sticky="w", pady=(10, 0))
         self.output_text = tk.Text(mf, height=12, width=80, font=("Consolas", 13))
-        self.output_text.grid(row=13, column=0, columnspan=3, sticky="nsew", pady=10)
-        mf.grid_rowconfigure(13, weight=1)
+        self.output_text.grid(row=14, column=0, columnspan=3, sticky="nsew", pady=10)
+        mf.grid_rowconfigure(14, weight=1)
 
         # Context menus on all text inputs
         for w in (self.url_entry, self.cookies_entry,
@@ -426,6 +451,10 @@ class YTDownloaderApp:
     def _on_browser_toggle(self):
         self.browser_list.config(
             state="readonly" if self.browser_var.get() else "disabled")
+
+    def _on_conns_toggle(self):
+        self._conns_spinbox.config(
+            state="readonly" if self.conns_enabled.get() else "disabled")
 
     def _show_ctx_menu(self, event, widget):
         m = tk.Menu(self.root, tearoff=0)
@@ -459,13 +488,63 @@ class YTDownloaderApp:
             browser  = self.browser_list.get(),
             out_dir  = self.output_dir_var.get().strip(),
             quality  = self.quality_list.get(),
-            pl_range = self.playlist_range_entry.get().strip(),
-            conns    = self.conns_var.get(),
+            pl_range  = self.playlist_range_entry.get().strip(),
+            conns     = self.conns_var.get() if self.conns_enabled.get() else None,
         )
+        self._paused = False
+        self._pause_btn_text.set("Pause")
         threading.Thread(target=self._download, args=(params,), daemon=True).start()
+
+    def pause_resume_download(self):
+        if not self.download_process or self.download_process.poll() is not None:
+            self.status_label.config(text="No active download to pause.")
+            return
+        pid = self.download_process.pid
+        if not self._paused:
+            try:
+                if platform.system() == "Windows":
+                    import ctypes
+                    handle = ctypes.windll.kernel32.OpenProcess(0x1F0FFF, False, pid)
+                    ctypes.windll.ntdll.NtSuspendProcess(handle)
+                    ctypes.windll.kernel32.CloseHandle(handle)
+                else:
+                    os.kill(pid, signal.SIGSTOP)
+                self._paused = True
+                self._pause_btn_text.set("Resume")
+                self.status_label.config(text="Download paused.")
+                self.speed_label.config(text="")
+            except Exception as e:
+                self.status_label.config(text=f"Could not pause: {e}")
+        else:
+            try:
+                if platform.system() == "Windows":
+                    import ctypes
+                    handle = ctypes.windll.kernel32.OpenProcess(0x1F0FFF, False, pid)
+                    ctypes.windll.ntdll.NtResumeProcess(handle)
+                    ctypes.windll.kernel32.CloseHandle(handle)
+                else:
+                    os.kill(pid, signal.SIGCONT)
+                self._paused = False
+                self._pause_btn_text.set("Pause")
+                self.status_label.config(text="Downloading…")
+            except Exception as e:
+                self.status_label.config(text=f"Could not resume: {e}")
 
     def stop_download(self):
         if self.download_process and self.download_process.poll() is None:
+            if self._paused:
+                try:
+                    if platform.system() == "Windows":
+                        import ctypes
+                        handle = ctypes.windll.kernel32.OpenProcess(0x1F0FFF, False, self.download_process.pid)
+                        ctypes.windll.ntdll.NtResumeProcess(handle)
+                        ctypes.windll.kernel32.CloseHandle(handle)
+                    else:
+                        os.kill(self.download_process.pid, signal.SIGCONT)
+                except Exception:
+                    pass
+                self._paused = False
+                self._pause_btn_text.set("Pause")
             self.download_process.terminate()
             self.status_label.config(text="Download stopped by user.")
         else:
@@ -479,7 +558,7 @@ class YTDownloaderApp:
         out_dir  = params["out_dir"]
         quality  = params["quality"]
         pl_range = params["pl_range"]
-        conns    = params["conns"]
+        conns    = params["conns"]   # None means disabled
 
         if not url:
             self._ui(lambda: self.status_label.config(text="URL is required!"))
@@ -546,7 +625,8 @@ class YTDownloaderApp:
         }
         cmd += quality_flags.get(quality, [])
 
-        cmd += ["--concurrent-fragments", str(conns)]
+        if conns is not None:
+            cmd += ["--concurrent-fragments", str(conns)]
 
         if pl_range:
             cmd += ["--playlist-items", pl_range]
@@ -556,7 +636,16 @@ class YTDownloaderApp:
             cmd += ["--cookies", cookies]
         cmd += ["-ic", url]
 
+        is_pl = self._is_playlist(url)
+        if is_pl:
+            self._ui(lambda: self._pl_bar_frame.grid())
+            self._ui(lambda: self.pl_progress_bar.configure(value=0, maximum=100))
+            self._ui(lambda: self._pl_progress_label.config(text=""))
+        else:
+            self._ui(lambda: self._pl_bar_frame.grid_remove())
+
         self._ui(lambda: self.status_label.config(text="Downloading…"))
+        self._ui(lambda: self.speed_label.config(text=""))
         self._ui(lambda: self.output_text.delete(1.0, tk.END))
 
         try:
@@ -572,23 +661,45 @@ class YTDownloaderApp:
                     self.output_text.insert(tk.END, l),
                     self.output_text.see(tk.END)
                 ))
-                if "[download]" in line and "%" in line:
-                    try:
-                        pct = float(line.split("%")[0].split()[-1])
-                        self._ui(lambda p=pct: self.progress_bar.configure(value=p))
-                    except Exception:
-                        pass
+                if "[download]" in line:
+                    if " at " in line and "/s" in line:
+                        try:
+                            speed = line.split(" at ")[-1].strip().split()[0]
+                            if "/s" in speed:
+                                self._ui(lambda s=speed: self.speed_label.config(text=f"Speed: {s}"))
+                        except Exception:
+                            pass
+                    if "%" in line:
+                        try:
+                            pct = float(line.split("%")[0].split()[-1])
+                            self._ui(lambda p=pct: self.progress_bar.configure(value=p))
+                        except Exception:
+                            pass
+                    if is_pl and "Downloading item" in line:
+                        try:
+                            parts = line.split("Downloading item")[1].strip().split()
+                            cur, total = int(parts[0]), int(parts[2])
+                            self._ui(lambda c=cur, t=total: (
+                                self.pl_progress_bar.configure(maximum=t, value=c),
+                                self._pl_progress_label.config(text=f"{c} / {t}")
+                            ))
+                        except Exception:
+                            pass
             self.download_process.wait()
             rc = self.download_process.returncode
             msg = ("Download complete!" if rc == 0
                    else "Download finished with errors or was stopped.")
             self._ui(lambda m=msg: self.status_label.config(text=m))
             self._ui(lambda: self.progress_bar.configure(value=0))
+            self._ui(lambda: self.speed_label.config(text=""))
         except Exception as e:
             err = str(e)
             self._ui(lambda m=err: self.status_label.config(text=f"Error: {m}"))
         finally:
             self.download_process = None
+            self._paused = False
+            self._ui(lambda: self._pause_btn_text.set("Pause"))
+            self._ui(lambda: self._pl_bar_frame.grid_remove())
 
     # ── Check for Updates ─────────────────────────────────────────────────────
 
