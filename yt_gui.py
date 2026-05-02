@@ -548,10 +548,6 @@ class YTDownloaderApp:
 
         cmd += ["--concurrent-fragments", str(conns)]
 
-        if self._is_playlist(url):
-            # Sleep 3–8 s between playlist items to avoid YouTube rate-limiting
-            cmd += ["--sleep-interval", "3", "--max-sleep-interval", "8"]
-
         if pl_range:
             cmd += ["--playlist-items", pl_range]
         if use_brws and browser != "None":

@@ -12,7 +12,6 @@ A cross-platform desktop GUI for downloading YouTube videos and playlists, power
 - Download single videos or full playlists
 - Quality selection: Best, 720p, 1080p, 1440p, 2160p (4K), 4320p (8K), Audio Only
 - **Concurrent fragments** — adjustable 1–16 parallel segment downloads (default 4) to maximise download speed on DASH/HLS streams like YouTube
-- **Smart playlist pacing** — automatic 3–8 s sleep between playlist items to prevent YouTube rate limiting mid-playlist
 - Cookie support — load from a `.txt` file or extract live from Chrome, Brave, Firefox, or Edge
 - Playlist range filter (e.g. `1-50`)
 - Real-time progress bar and streaming log output
